@@ -1,4 +1,8 @@
-#define MAX_PAGES 512
+#include <stdlib.h>
+#include "lru.c"
+
+
+#define TOTAL_PAGES 512
 #define MAX_LRU_ENTRIES 250
 
 
@@ -7,8 +11,11 @@ typedef int pages_size_t;
 typedef unsigned long long page_address_t;
 
 
+char simu_physical_memory[TOTAL_PAGES];
+
 typedef struct buddy_allocator {
-    char simu_physical_memory[MAX_PAGES];
+    lru_cache_t *active_list;
+    lru_cache_t *inactive_list;
 } buddy_allocator_t;
 
 

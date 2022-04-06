@@ -1,0 +1,17 @@
+{
+    "files.associations": {
+        "stdio.h": "c",
+        "signal.h": "c",
+        "ranges": "c",
+        "queue": "c",
+        "__threading_support": "c",
+        "type_traits": "c",
+        "vector": "c",
+        "__split_buffer": "c",
+        "array": "c",
+        "deque": "c",
+        "string_view": "c",
+        "random": "c"
+    },
+    "C_Cpp.errorSquiggles": "Enabled"
+}
