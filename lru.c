@@ -1,25 +1,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
- 
-typedef struct lru_node {
-    lru_node_t *prev;
-    lru_node_t *next;
-    unsigned page_number;
-} lru_node_t;
- 
-typedef struct lru_cache {
-    unsigned count;
-    unsigned capacity;
-    lru_node_t *front;
-    lru_node_t *rear;
-} lru_cache_t;
- 
-// hash_table used for accessing lru_node with page number
-typedef struct hash_table {
-    int capacity; // how many pages can be there
-    lru_node_t** array; // an array of lru nodes
-} hash_table_t;
+#include "lru.h"
  
 // create a new lru_node
 lru_node_t* new_lru_node(unsigned page_number)
@@ -78,7 +60,7 @@ int is_lru_cache_empty(lru_cache_t* lru_cache)
 // return the evicted node
 lru_node_t *evict(lru_cache_t* lru_cache)
 {
-    if (is_lru_empty(lru_cache))
+    if (is_lru_cache_empty(lru_cache))
         return NULL;
  
     // if it is the only node in list, change front
@@ -110,7 +92,7 @@ void insert(lru_cache_t* lru_cache, hash_table_t* hash_table, unsigned page_numb
     }
  
     // create node and insert into the front
-    lru_node_t* new_node = create_node(page_number);
+    lru_node_t* new_node = new_lru_node(page_number);
     new_node->next = lru_cache->front;
  
     // if lru cache is empty, change both front and rear pointers
@@ -165,30 +147,3 @@ void access(lru_cache_t* lru_cache, hash_table_t* hash_table, unsigned page_numb
         lru_cache->front = req_node;
     }
 }
- 
-// // Driver program to test above functions
-// int main()
-// {
-//     // Let cache can hold 4 pages
-//     Queue* q = createQueue(4);
- 
-//     // Let 10 different pages can be requested (pages to be
-//     // referenced are numbered from 0 to 9
-//     Hash* hash = createHash(10);
- 
-//     // Let us refer pages 1, 2, 3, 1, 4, 5
-//     ReferencePage(q, hash, 1);
-//     ReferencePage(q, hash, 2);
-//     ReferencePage(q, hash, 3);
-//     ReferencePage(q, hash, 1);
-//     ReferencePage(q, hash, 4);
-//     ReferencePage(q, hash, 5);
- 
-//     // Let us print cache frames after the above referenced pages
-//     printf("%d ", q->front->pageNumber);
-//     printf("%d ", q->front->next->pageNumber);
-//     printf("%d ", q->front->next->next->pageNumber);
-//     printf("%d ", q->front->next->next->next->pageNumber);
- 
-//     return 0;
-// }
