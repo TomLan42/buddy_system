@@ -107,9 +107,10 @@ void free_pages(buddy_allocator_t *allocator, int seq_no, int page_size) {
     block_descriptor_t *free_block = seq_no_hash_table[seq_no];
    	for(int i = order; i < 9; i++)
 	{
-        block_descriptor_t *merged_block = find_buddy_and_merge(allocator->free_list[order], free_block);
+        block_descriptor_t *merged_block = find_buddy_and_merge(allocator, i, free_block);
         if (merged_block == NULL) break;
         free_block = merged_block;
+        printf("merged is %d", merged_block->first_page_address);
 	}
 
     // Remove the key existence from map
@@ -168,19 +169,22 @@ void push_back(free_list_t *list, block_descriptor_t *new_node) {
 }
 
 
-block_descriptor_t *find_buddy_and_merge(free_list_t *list, block_descriptor_t *free_block) {
+block_descriptor_t *find_buddy_and_merge(buddy_allocator_t *allocator, int order, block_descriptor_t *free_block) {
     // Calculate buddy address, complement k-th bit
     int mask = 1 << free_block->order;
     int buddy_address = free_block->first_page_address ^ mask;
     int is_left_buddy = free_block->first_page_address & mask;
     
     // Search in free list to find it's buddy
-    block_descriptor_t *cur = list->head;
+    block_descriptor_t *cur = allocator->free_list[order]->head;
+
     while(cur != NULL)
     {
         // If buddy found and is also free, merge the buddies to make them one larger free memory block
         if (cur->first_page_address == buddy_address)
         {
+            
+
             block_descriptor_t *merged_block;
             
             if (is_left_buddy)
@@ -188,10 +192,12 @@ block_descriptor_t *find_buddy_and_merge(free_list_t *list, block_descriptor_t *
             else
                 merged_block = new_block_descriptor(free_block->order+1, free_block->first_page_address);
             // Add larger block to higher order free lsit
-            push_back(list+1, merged_block);
+            
+            push_back(allocator->free_list[order+1], merged_block);
 
-            remove_node(list, cur);
-            remove_node(list, free_block);
+            remove_node(allocator->free_list[order], cur);
+            remove_node(allocator->free_list[order], free_block);
+
             return merged_block;
         }
 

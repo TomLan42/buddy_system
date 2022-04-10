@@ -31,12 +31,13 @@ buddy_allocator_t* new_buddy_allocator(void);
 void allocate_pages(buddy_allocator_t *allocator, int seq_no, int page_size);
 void access_pages(buddy_allocator_t *allocator, int seq_no, int page_size);
 void free_pages(buddy_allocator_t *allocator, int seq_no, int page_size);
+block_descriptor_t *find_buddy_and_merge(buddy_allocator_t *allocator, int order, block_descriptor_t *free_block);
+
 
 // free list manipulation methods
 block_descriptor_t*  remove_head(free_list_t *list);
 void remove_node(free_list_t *list, block_descriptor_t *node_to_remove);
 void push_back(free_list_t *list, block_descriptor_t *block_descriptor);
-block_descriptor_t *find_buddy_and_merge(free_list_t *list, block_descriptor_t *free_block);
 void dump_free_list(free_list_t *list, int order);
 
 
