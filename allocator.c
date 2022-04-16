@@ -24,20 +24,25 @@ buddy_allocator_t* new_buddy_allocator(void) {
     return buddy_allocator;
 }
 
-// memory management interface
+// allocate_pages allocates a block of contiguous pages for a process seq_no
+// Three cases:
+// 1) If there is a free block of the exact size, just allocate.
+// 2) If there is not a free block of the exact size, but free block of bigger size,
+//    split the bigger block and allocate.
+// 3) If there is no suitable free block, try evict blocks from inactive list until
+//    there is block matching the 2 cases above.
+// After each allocation, the block will be moved into the inactive list.
 void allocate_pages(buddy_allocator_t *allocator, int seq_no, int page_size) {
 
 	int order = get_order(page_size);
 	
-	// Block available
+	// Case 1)
 	if (allocator->free_list[order]->size > 0)
 	{
 		// Remove block from free list
-        block_descriptor_t* allocated_block = remove_head(allocator->free_list[order]);
-        
-		printf("Memory from %d, order %d allocated \n", allocated_block->first_page_address,allocated_block->order);
-
+        block_descriptor_t* allocated_block = remove_head(allocator->free_list[order]); 
         seq_no_hash_table[seq_no] = allocated_block;
+        printf("Memory from %d, order %d allocated \n", allocated_block->first_page_address,allocated_block->order);
 	}
 	else
 	{
@@ -49,15 +54,13 @@ void allocate_pages(buddy_allocator_t *allocator, int seq_no, int page_size) {
 				break;
 		}
 
-		// If no such block is found
-		// i.e., no memory block available
+		// Case 3)
 		if (i == 10)
 		{
-            // Reclaimation
 			printf("Sorry, failed to allocate memory \n");
 		}
 		
-		// If found
+		// Case 2)
 		else
 		{
             block_descriptor_t* splitted_block = remove_head(allocator->free_list[i]);
@@ -84,11 +87,30 @@ void allocate_pages(buddy_allocator_t *allocator, int seq_no, int page_size) {
 
 }
 
+
+// access_pages access a page at a specific position from the block 
+// allocated for seq_no
+// Four cases:
+// 1) If the allocated block is in physical memory, move the block to active list. If already
+//    in the active list, do nothing.
+// 2) If the allocated block is not in physical memory, bring the whole block back from the
+//    evicted map. Move the block to active list.
 void access_pages(buddy_allocator_t *allocator, int seq_no, int page_size) {
 
 }
 
-void free_pages(buddy_allocator_t *allocator, int seq_no, int page_size) {
+// free_pages explicitly free a page at a specific position from the block 
+// allocated for seq_no
+// Three cases:
+// 1) If all other pages of seq_no are freed:
+//      a. if the block is still in physcial memory, release the block, remove
+//         the block from any list and map.
+//      b. if the block is not in physical memory, remove the block from any 
+//         list and map.
+//
+// 2) If not all pages of seq_no are freed, record the free status for the seq_no
+//    then do nothing.
+void free_pages(buddy_allocator_t *allocator, int seq_no, int page_pos) {
     // If no such starting address available
     if(seq_no_hash_table[seq_no] == NULL)
     {
@@ -118,6 +140,47 @@ void free_pages(buddy_allocator_t *allocator, int seq_no, int page_size) {
 }
 
 
+// find_buddy_and_merge do what the name sugguest :)
+block_descriptor_t *find_buddy_and_merge(buddy_allocator_t *allocator, int order, block_descriptor_t *free_block) {
+    // Calculate buddy address, complement k-th bit
+    int mask = 1 << free_block->order;
+    int buddy_address = free_block->first_page_address ^ mask;
+    int is_left_buddy = free_block->first_page_address & mask;
+    
+    // Search in free list to find it's buddy
+    block_descriptor_t *cur = allocator->free_list[order]->head;
+
+    while(cur != NULL)
+    {
+        // If buddy found and is also free, merge the buddies to make them one larger free memory block
+        if (cur->first_page_address == buddy_address)
+        {
+            
+
+            block_descriptor_t *merged_block;
+            
+            if (is_left_buddy)
+                merged_block = new_block_descriptor(free_block->order+1, buddy_address);
+            else
+                merged_block = new_block_descriptor(free_block->order+1, free_block->first_page_address);
+            // Add larger block to higher order free lsit
+            
+            push_back(allocator->free_list[order+1], merged_block);
+
+            remove_node(allocator->free_list[order], cur);
+            remove_node(allocator->free_list[order], free_block);
+
+            return merged_block;
+        }
+
+        cur = cur->next;
+    }
+
+    return NULL;
+}
+
+
+// free list (a single linked list) manipulation util
 block_descriptor_t *remove_head(free_list_t *list) {
     if (list->size == 0) {
         return NULL;
@@ -168,44 +231,6 @@ void push_back(free_list_t *list, block_descriptor_t *new_node) {
     return;
 }
 
-
-block_descriptor_t *find_buddy_and_merge(buddy_allocator_t *allocator, int order, block_descriptor_t *free_block) {
-    // Calculate buddy address, complement k-th bit
-    int mask = 1 << free_block->order;
-    int buddy_address = free_block->first_page_address ^ mask;
-    int is_left_buddy = free_block->first_page_address & mask;
-    
-    // Search in free list to find it's buddy
-    block_descriptor_t *cur = allocator->free_list[order]->head;
-
-    while(cur != NULL)
-    {
-        // If buddy found and is also free, merge the buddies to make them one larger free memory block
-        if (cur->first_page_address == buddy_address)
-        {
-            
-
-            block_descriptor_t *merged_block;
-            
-            if (is_left_buddy)
-                merged_block = new_block_descriptor(free_block->order+1, buddy_address);
-            else
-                merged_block = new_block_descriptor(free_block->order+1, free_block->first_page_address);
-            // Add larger block to higher order free lsit
-            
-            push_back(allocator->free_list[order+1], merged_block);
-
-            remove_node(allocator->free_list[order], cur);
-            remove_node(allocator->free_list[order], free_block);
-
-            return merged_block;
-        }
-
-        cur = cur->next;
-    }
-
-    return NULL;
-}
 
 void dump_free_list(free_list_t *list, int order) {
     block_descriptor_t *cur = list->head;
