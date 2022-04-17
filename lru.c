@@ -121,12 +121,12 @@ lru_node_t *lru_remove(lru_cache_t* lru_cache, int seq_no)
         lru_cache->rear = node_to_remove->prev;
     }
 
-    lru_node_t* temp = node_to_remove->prev;
     if (node_to_remove->prev != NULL)
         node_to_remove->prev->next = node_to_remove->next;
 
+    
     if (node_to_remove->next != NULL)
-        node_to_remove->next->prev = temp;
+        node_to_remove->next->prev = node_to_remove->prev;
 
     node_to_remove->prev = NULL;
     node_to_remove->next = NULL;
@@ -143,7 +143,7 @@ void dump_lru_cache(lru_cache_t *lru_cache) {
     
     printf("[LRU, count %d, cap %d]->", lru_cache->count, lru_cache->capacity);
     while (cur != NULL) {
-        printf("[ seq_no: %d ]-> ", cur->block->seq_no);
+        printf("[ seq_no: %d, address %d ]-> ", cur->block->seq_no, cur->block->first_page_address);
         cur = cur->next;
     }
 

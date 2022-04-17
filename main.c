@@ -13,7 +13,7 @@ int main (void)
     size_t len = 0;
     ssize_t read;
 
-    fp = fopen("./test.dat", "r");
+    fp = fopen("./A0248411L-assign4-input.dat", "r");
     if (fp == NULL)
         exit(EXIT_FAILURE);
 
@@ -23,7 +23,7 @@ int main (void)
     buddy_allocator_t *allocator = new_buddy_allocator();
 
     while ((read = getline(&line, &len, fp)) != -1) {
-        printf("Processing request: %s \n", line);
+        printf("\nProcessing request: %s", line);
         
         char** tokenized_string = str_split(line, '\t');
 
@@ -37,16 +37,20 @@ int main (void)
                 allocate_pages(allocator, request_seq_no, request_page_size);
                 break;
             case 'X':
-                access_pages(allocator, request_seq_no, request_page_size);
+                access_pages(allocator, request_seq_no);
                 break;
             case 'F':
-                free_pages(allocator, request_seq_no, request_page_size);
+                free_pages(allocator, request_seq_no);
                 break;
         }
         // Remove first block to split it into halves
         for (int i = 0; i < 10; i++)
             dump_free_list(allocator->free_list[i],i);
 
+
+        printf("[Active list]->");
+        dump_lru_cache(allocator->active_list);
+        printf("[Inactive list]->");
         dump_lru_cache(allocator->inactive_list);
     }
 

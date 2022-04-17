@@ -110,7 +110,7 @@ block_descriptor_t *_allocate_block(buddy_allocator_t *allocator, int req_order)
 //    in the active list, do nothing.
 // 2) If the allocated block is not in physical memory, bring the whole block back from the
 //    evicted map. Move the block to active list.
-void access_pages(buddy_allocator_t *allocator, int seq_no, int page_pos) {
+void access_pages(buddy_allocator_t *allocator, int seq_no) {
 
     if(allocated_seq_no_hash_table[seq_no] == NULL && evicted_seq_no_hash_table[seq_no] == NULL) {
         printf("Not found, seq_no %d has been freed.\n", seq_no);
@@ -120,11 +120,13 @@ void access_pages(buddy_allocator_t *allocator, int seq_no, int page_pos) {
     if (allocated_seq_no_hash_table[seq_no] != NULL) {
         lru_node_t  *promoted_node = lru_remove(allocator->inactive_list, seq_no);  
         if (promoted_node != NULL) {
-            lru_insert(allocator->active_list, promoted_node->block);
+            lru_node_t *downgraded_node = lru_insert(allocator->active_list, promoted_node->block);
+            if (downgraded_node != NULL){
+                lru_insert(allocator->inactive_list, downgraded_node->block);
+            }
         }
-        return;;
+        return;
     }
-
 
     // Page Fault!
     if (evicted_seq_no_hash_table[seq_no] != NULL) {
@@ -146,11 +148,14 @@ void access_pages(buddy_allocator_t *allocator, int seq_no, int page_pos) {
 
         if (allocator->active_list->hash_table[seq_no] == NULL) {
             lru_node_t *downgraded_node = lru_insert(allocator->active_list, swapped_in_block);
-            lru_node_t *evicted_node = lru_insert(allocator->inactive_list, downgraded_node->block);
-            if (evicted_node != NULL) {
-                _free_block(allocator, evicted_node->block);
-                allocated_seq_no_hash_table[evicted_node->block->seq_no] = NULL;
-                evicted_seq_no_hash_table[evicted_node->block->seq_no] = evicted_node->block;
+            if (downgraded_node != NULL) {
+                lru_node_t *evicted_node = lru_insert(allocator->inactive_list, downgraded_node->block);
+                if (evicted_node != NULL) {
+                    _free_block(allocator, evicted_node->block);
+                    allocated_seq_no_hash_table[evicted_node->block->seq_no] = NULL;
+                    evicted_node->block->seq_no = -1;
+                    evicted_seq_no_hash_table[evicted_node->block->seq_no] = evicted_node->block;
+                }
             }
         }
         
@@ -159,18 +164,11 @@ void access_pages(buddy_allocator_t *allocator, int seq_no, int page_pos) {
     return;
 }
 
-// free_pages explicitly free a page at a specific position from the block 
-// allocated for seq_no
-// Three cases:
-// 1) If all other pages of seq_no are freed:
-//      a. if the block is still in physcial memory, release the block, remove
-//         the block from any list and map.
-//      b. if the block is not in physical memory, remove the block from any 
-//         list and map.
-//
-// 2) If not all pages of seq_no are freed, record the free status for the seq_no
-//    then do nothing.
-void free_pages(buddy_allocator_t *allocator, int seq_no, int page_pos) {
+// free_pages explicitly free a block allocarted for seq_no.
+// Two cases:
+// 1) If the block is still in physcial memory, release the block, remove the block from any list and map.
+// 2) If the block is not in physical memory, remove the block from any list and map.
+void free_pages(buddy_allocator_t *allocator, int seq_no) {
 
     if(allocated_seq_no_hash_table[seq_no] == NULL && evicted_seq_no_hash_table[seq_no] == NULL){
         printf("Not found, seq_no %d has not been allocated.\n", seq_no);
@@ -184,7 +182,9 @@ void free_pages(buddy_allocator_t *allocator, int seq_no, int page_pos) {
     }
 
     _free_block(allocator, allocated_seq_no_hash_table[seq_no]);
+    allocated_seq_no_hash_table[seq_no]->seq_no = -1;
     allocated_seq_no_hash_table[seq_no] = NULL;
+
     lru_remove(allocator->active_list, seq_no);
     lru_remove(allocator->inactive_list, seq_no);
     
@@ -205,7 +205,7 @@ void _free_block(buddy_allocator_t *allocator, block_descriptor_t *block_to_free
 	{
         block_descriptor_t *merged_block = _find_buddy_and_merge(allocator, i, free_block);
         if (merged_block == NULL) break;
-        printf("Memory from %d, order %d freed -> merged to-> Memory from %d, order %d freed \n", free_block->first_page_address, free_block->order, merged_block->first_page_address, merged_block->order);
+        // printf("Memory from %d, order %d freed -> merged to-> Memory from %d, order %d freed \n", free_block->first_page_address, free_block->order, merged_block->first_page_address, merged_block->order);
         free_block = merged_block;
 	}
 
@@ -257,6 +257,8 @@ int reclaim(buddy_allocator_t *allocator) {
         return -1;
     
     _free_block(allocator, evicted_node->block);
+    allocated_seq_no_hash_table[evicted_node->block->seq_no] = NULL;
+    evicted_seq_no_hash_table[evicted_node->block->seq_no] = evicted_node->block;
     return 0;
 }
 
@@ -324,7 +326,7 @@ void dump_free_list(free_list_t *list, int order) {
     
     printf("[ORDER %d, size %d]->", order, list->size);
     while (cur != NULL) {
-        printf("[ address: %d, seq_no %d]-> ", cur->first_page_address, cur->seq_no);
+        printf("[ address: %d]-> ", cur->first_page_address);
         cur = cur->next;
     }
 

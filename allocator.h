@@ -21,8 +21,8 @@ typedef struct lru_node {
 } lru_node_t;
 
 typedef struct lru_cache {
-    unsigned count;
-    unsigned capacity;
+    unsigned count; // count of pages
+    unsigned capacity; // max capacity of pages
     lru_node_t** hash_table; // hash
     lru_node_t *front;
     lru_node_t *rear;
@@ -41,8 +41,8 @@ block_descriptor_t* evicted_seq_no_hash_table[1500];
 // memory management methods
 buddy_allocator_t* new_buddy_allocator(void);
 void allocate_pages(buddy_allocator_t *allocator, int seq_no, int page_size);
-void access_pages(buddy_allocator_t *allocator, int seq_no, int page_pos);
-void free_pages(buddy_allocator_t *allocator, int seq_no, int page_pos);
+void access_pages(buddy_allocator_t *allocator, int seq_no);
+void free_pages(buddy_allocator_t *allocator, int seq_no);
 int reclaim(buddy_allocator_t *allocator);
 block_descriptor_t *_find_buddy_and_merge(buddy_allocator_t *allocator, int order, block_descriptor_t *free_block);
 block_descriptor_t *_allocate_block(buddy_allocator_t *allocator, int req_order);
