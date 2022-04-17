@@ -34,20 +34,43 @@ buddy_allocator_t* new_buddy_allocator(void) {
 //    there is block matching the 2 cases above.
 // After each allocation, the block will be moved into the inactive list.
 void allocate_pages(buddy_allocator_t *allocator, int seq_no, int page_size) {
+    // check if already allocated
+    if (allocated_seq_no_hash_table[seq_no] != NULL || evicted_seq_no_hash_table[seq_no] != NULL) {
+        printf("Sorry, already allocated \n");
+        return;
+    }
 
-	int req_order = get_order(page_size);
-	
-	// Case 1
-	if (allocator->free_list[req_order]->size > 0)
+    block_descriptor_t *allocated_block = _allocate_block(allocator, get_order(page_size));
+
+    while (allocated_block == NULL) {
+        // if nothing to reclaim
+        if (reclaim(allocator) != 0) {
+            printf("Sorry, failed to allocate memory \n");
+            return;
+        }
+        allocated_block = _allocate_block(allocator, get_order(page_size));
+    }
+
+    allocated_seq_no_hash_table[seq_no] = allocated_block;
+    allocated_block->seq_no = seq_no;
+    
+    lru_node_t *evicted_node = lru_insert(allocator->inactive_list, allocated_block);
+    if (evicted_node != NULL) {
+        _free_block(allocator, evicted_node->block);
+        allocated_seq_no_hash_table[evicted_node->block->seq_no] = NULL;
+        evicted_seq_no_hash_table[evicted_node->block->seq_no] = evicted_node->block;
+    }
+}
+
+block_descriptor_t *_allocate_block(buddy_allocator_t *allocator, int req_order) {
+    // Case 1
+    if (allocator->free_list[req_order]->size > 0)
 	{
 		// Remove block from free list
         block_descriptor_t* allocated_block = remove_head(allocator->free_list[req_order]); 
         printf("Memory from %d, order %d allocated \n", allocated_block->first_page_address,allocated_block->order);
                
-        seq_no_hash_table[seq_no] = allocated_block;
-        allocated_block->seq_no = seq_no;
-        lru_insert(allocator->inactive_list, allocated_block);
-        return;
+        return allocated_block;
 	}
 	
     for(int i = req_order + 1; i < 10; i++)
@@ -72,28 +95,68 @@ void allocate_pages(buddy_allocator_t *allocator, int seq_no, int page_size) {
 
         printf("Memory from %d, order %d allocated\n", splitted_block->first_page_address,splitted_block->order);
         
-        seq_no_hash_table[seq_no] = splitted_block;
-        splitted_block->seq_no = seq_no;
-        lru_insert(allocator->inactive_list, splitted_block);
-        return;
+        return splitted_block;
         }
     }
 
-    // Case 3
-    printf("Sorry, failed to allocate memory \n");
-		
+    return NULL;
 }
 
 
 // access_pages access a page at a specific position from the block 
 // allocated for seq_no
-// Four cases:
+// Two cases:
 // 1) If the allocated block is in physical memory, move the block to active list. If already
 //    in the active list, do nothing.
 // 2) If the allocated block is not in physical memory, bring the whole block back from the
 //    evicted map. Move the block to active list.
 void access_pages(buddy_allocator_t *allocator, int seq_no, int page_pos) {
 
+    if(allocated_seq_no_hash_table[seq_no] == NULL && evicted_seq_no_hash_table[seq_no] == NULL) {
+        printf("Not found, seq_no %d has been freed.\n", seq_no);
+        return;
+    }
+
+    if (allocated_seq_no_hash_table[seq_no] != NULL) {
+        lru_node_t  *promoted_node = lru_remove(allocator->inactive_list, seq_no);  
+        if (promoted_node != NULL) {
+            lru_insert(allocator->active_list, promoted_node->block);
+        }
+        return;;
+    }
+
+
+    // Page Fault!
+    if (evicted_seq_no_hash_table[seq_no] != NULL) {
+        int req_order = evicted_seq_no_hash_table[seq_no]->order;
+        block_descriptor_t *swapped_in_block = _allocate_block(allocator, req_order);
+
+        while (swapped_in_block == NULL) {
+            // if nothing to reclaim
+            if (reclaim(allocator) != 0) {
+                printf("Sorry, failed to swap in memory \n");
+                return;
+            }
+            swapped_in_block = _allocate_block(allocator, req_order);
+        }
+
+        allocated_seq_no_hash_table[seq_no] = swapped_in_block;
+        swapped_in_block->seq_no = seq_no;
+        evicted_seq_no_hash_table[seq_no] = NULL;
+
+        if (allocator->active_list->hash_table[seq_no] == NULL) {
+            lru_node_t *downgraded_node = lru_insert(allocator->active_list, swapped_in_block);
+            lru_node_t *evicted_node = lru_insert(allocator->inactive_list, downgraded_node->block);
+            if (evicted_node != NULL) {
+                _free_block(allocator, evicted_node->block);
+                allocated_seq_no_hash_table[evicted_node->block->seq_no] = NULL;
+                evicted_seq_no_hash_table[evicted_node->block->seq_no] = evicted_node->block;
+            }
+        }
+        
+    }
+
+    return;
 }
 
 // free_pages explicitly free a page at a specific position from the block 
@@ -108,40 +171,49 @@ void access_pages(buddy_allocator_t *allocator, int seq_no, int page_pos) {
 // 2) If not all pages of seq_no are freed, record the free status for the seq_no
 //    then do nothing.
 void free_pages(buddy_allocator_t *allocator, int seq_no, int page_pos) {
-    // If no such starting address available
-    if(seq_no_hash_table[seq_no] == NULL)
+
+    if(allocated_seq_no_hash_table[seq_no] == NULL && evicted_seq_no_hash_table[seq_no] == NULL){
+        printf("Not found, seq_no %d has not been allocated.\n", seq_no);
+        return;
+    }
+
+    if(allocated_seq_no_hash_table[seq_no] == NULL && evicted_seq_no_hash_table[seq_no] != NULL)
     {
-       printf("Not found, seq_no %d has not been allocated \n", seq_no);
+       evicted_seq_no_hash_table[seq_no] = NULL;
        return;
     }
-     
-    // Size of block to be searched
-    int order = seq_no_hash_table[seq_no]->order;
- 
-    // Add the block in free list
-    push_back(allocator->free_list[order], seq_no_hash_table[seq_no]);
-    dump_free_list(allocator->free_list[order],order);
 
-	printf("Memory from %d, order %d freed\n", seq_no_hash_table[seq_no]->first_page_address, seq_no_hash_table[seq_no]->order);
-
-    block_descriptor_t *free_block = seq_no_hash_table[seq_no];
-   	for(int i = order; i < 9; i++)
-	{
-        block_descriptor_t *merged_block = find_buddy_and_merge(allocator, i, free_block);
-        if (merged_block == NULL) break;
-        printf("Memory from %d, order %d freed ->merged to-> Memory from %d, order %d freed \n", seq_no_hash_table[seq_no]->first_page_address, seq_no_hash_table[seq_no]->order, merged_block->first_page_address, merged_block->order);
-        free_block = merged_block;
-	}
-
-    // Remove the key existence from map
+    _free_block(allocator, allocated_seq_no_hash_table[seq_no]);
+    allocated_seq_no_hash_table[seq_no] = NULL;
+    lru_remove(allocator->active_list, seq_no);
     lru_remove(allocator->inactive_list, seq_no);
-    seq_no_hash_table[seq_no]->seq_no = -1;
-    seq_no_hash_table[seq_no] = NULL;
+    
+    return;
 }
 
 
+void _free_block(buddy_allocator_t *allocator, block_descriptor_t *block_to_free) {
+    // Size of block to be searched
+    int order = block_to_free->order;
+ 
+    // Add the block in free list
+    push_back(allocator->free_list[order], block_to_free);
+	printf("Memory from %d, order %d freed\n", block_to_free->first_page_address, block_to_free->order);
+
+    block_descriptor_t *free_block = block_to_free;
+   	for(int i = order; i < 9; i++)
+	{
+        block_descriptor_t *merged_block = _find_buddy_and_merge(allocator, i, free_block);
+        if (merged_block == NULL) break;
+        printf("Memory from %d, order %d freed -> merged to-> Memory from %d, order %d freed \n", free_block->first_page_address, free_block->order, merged_block->first_page_address, merged_block->order);
+        free_block = merged_block;
+	}
+
+    return;
+}
+
 // find_buddy_and_merge do what the name sugguest :)
-block_descriptor_t *find_buddy_and_merge(buddy_allocator_t *allocator, int order, block_descriptor_t *free_block) {
+block_descriptor_t *_find_buddy_and_merge(buddy_allocator_t *allocator, int order, block_descriptor_t *free_block) {
     // Calculate buddy address, complement k-th bit
     int mask = 1 << free_block->order;
     int buddy_address = free_block->first_page_address ^ mask;
@@ -177,6 +249,17 @@ block_descriptor_t *find_buddy_and_merge(buddy_allocator_t *allocator, int order
 
     return NULL;
 }
+
+
+int reclaim(buddy_allocator_t *allocator) {
+    lru_node_t *evicted_node = lru_evict(allocator->inactive_list);
+    if (evicted_node == NULL) // lru empty
+        return -1;
+    
+    _free_block(allocator, evicted_node->block);
+    return 0;
+}
+
 
 
 // free list (a single linked list) manipulation util

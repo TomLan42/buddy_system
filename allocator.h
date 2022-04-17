@@ -34,14 +34,21 @@ typedef struct buddy_allocator {
     free_list_t *free_list[10];
 } buddy_allocator_t;
 
-block_descriptor_t* seq_no_hash_table[1500];
+block_descriptor_t* allocated_seq_no_hash_table[1500];
+block_descriptor_t* evicted_seq_no_hash_table[1500];
+
 
 // memory management methods
 buddy_allocator_t* new_buddy_allocator(void);
 void allocate_pages(buddy_allocator_t *allocator, int seq_no, int page_size);
 void access_pages(buddy_allocator_t *allocator, int seq_no, int page_pos);
 void free_pages(buddy_allocator_t *allocator, int seq_no, int page_pos);
-block_descriptor_t *find_buddy_and_merge(buddy_allocator_t *allocator, int order, block_descriptor_t *free_block);
+int reclaim(buddy_allocator_t *allocator);
+block_descriptor_t *_find_buddy_and_merge(buddy_allocator_t *allocator, int order, block_descriptor_t *free_block);
+block_descriptor_t *_allocate_block(buddy_allocator_t *allocator, int req_order);
+void _free_block(buddy_allocator_t *allocator, block_descriptor_t *block_to_free);
+
+
 
 // free list manipulation methods
 block_descriptor_t*  remove_head(free_list_t *list);
