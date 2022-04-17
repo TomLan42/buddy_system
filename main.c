@@ -46,6 +46,8 @@ int main (void)
         // Remove first block to split it into halves
         for (int i = 0; i < 10; i++)
             dump_free_list(allocator->free_list[i],i);
+
+        dump_lru_cache(allocator->inactive_list);
     }
 
     fclose(fp);

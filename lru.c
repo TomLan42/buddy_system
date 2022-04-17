@@ -1,14 +1,13 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include "lru.h"
- 
+#include "allocator.h"
+
 // create a new lru_node
-lru_node_t* new_lru_node(unsigned page_number)
+lru_node_t* new_lru_node(block_descriptor_t *block)
 {
     lru_node_t* temp = (lru_node_t*)malloc(sizeof(lru_node_t));
-    temp->page_number = page_number;
- 
+    temp->block = block;
     temp->prev = NULL;
     temp->next = NULL;
  
@@ -19,31 +18,18 @@ lru_node_t* new_lru_node(unsigned page_number)
 lru_cache_t* new_lru_cache(int capacity)
 {
     lru_cache_t* lru_cache = (lru_cache_t*)malloc(sizeof(lru_cache_t));
-
     lru_cache->count = 0;
     lru_cache->capacity = capacity;
-
     lru_cache->front = NULL;
     lru_cache->rear = NULL;
 
-    return lru_cache;
-}
- 
-// create an empty hash_table of given capacity
-hash_table_t* create_hash_table(int capacity)
-{
-    hash_table_t* hash_table = (hash_table_t*)malloc(sizeof(hash_table_t));
-    hash_table->capacity = capacity;
- 
-    // array of pointers for referring lru nodes
-     hash_table->array = (lru_node_t**)malloc(hash_table->capacity * sizeof(lru_node_t*));
+    // init hash
+    lru_cache->hash_table = (lru_node_t**)malloc(1500 * sizeof(lru_node_t*));
  
     // initialize all hash entries as empty
-    int i;
-    for (i = 0; i < hash_table->capacity; ++i)
-        hash_table->array[i] = NULL;
- 
-    return hash_table;
+    for (int i = 0; i < capacity; ++i)
+       lru_cache->hash_table[i] = NULL;
+    return lru_cache;
 }
  
 int is_lru_cache_full(lru_cache_t* lru_cache)
@@ -57,8 +43,7 @@ int is_lru_cache_empty(lru_cache_t* lru_cache)
 }
  
 // evict a node from lru_cache
-// return the evicted node
-lru_node_t *evict(lru_cache_t* lru_cache)
+lru_node_t *lru_evict(lru_cache_t* lru_cache)
 {
     if (is_lru_cache_empty(lru_cache))
         return NULL;
@@ -81,23 +66,25 @@ lru_node_t *evict(lru_cache_t* lru_cache)
     return evicted_node;
 }
  
-// insert a node into lru cache
-void insert(lru_cache_t* lru_cache, hash_table_t* hash_table, unsigned page_number)
+// insert a node into lru cache, return the evicted node
+lru_node_t *lru_insert(lru_cache_t* lru_cache, block_descriptor_t *block)
 {
+    lru_node_t *evected_node = NULL;
+
     // if cache is full, remove the rear node
     if (is_lru_cache_full(lru_cache)) {
         // remove page from hash
-        hash_table->array[lru_cache->rear->page_number] = NULL;
-        evict(lru_cache);
+        lru_cache->hash_table[lru_cache->rear->block->seq_no] = NULL;
+        evected_node = lru_evict(lru_cache);
     }
  
     // create node and insert into the front
-    lru_node_t* new_node = new_lru_node(page_number);
+    lru_node_t* new_node = new_lru_node(block);
     new_node->next = lru_cache->front;
  
     // if lru cache is empty, change both front and rear pointers
     // else only change the front
-    if (is_lru_cache_full(lru_cache)){
+    if (is_lru_cache_empty(lru_cache)){
         lru_cache->rear = new_node;
         lru_cache->front = new_node;
     } else 
@@ -106,44 +93,60 @@ void insert(lru_cache_t* lru_cache, hash_table_t* hash_table, unsigned page_numb
         lru_cache->front = new_node;
     }
  
-    hash_table->array[page_number] = new_node;
+    lru_cache->hash_table[block->seq_no] = new_node;
  
     lru_cache->count++;
+    return evected_node;
 }
  
 
-
- // access a node with given page_number
- // 1) if exist, move the node to the front
- // 2) if not exist, insert a new node
-void access(lru_cache_t* lru_cache, hash_table_t* hash_table, unsigned page_number)
+ // remove a node from lru cache, return removed node
+lru_node_t *lru_remove(lru_cache_t* lru_cache, int seq_no)
 {
-    lru_node_t* req_node = hash_table->array[page_number];
+    if (is_lru_cache_empty(lru_cache))
+        return NULL;
  
-    if (req_node == NULL)
-        insert(lru_cache, hash_table, page_number);
- 
-    else if (req_node != lru_cache->front) {
-        
-        // unlink rquested node from its current location
-        req_node->prev->next = req_node->next;
-        if (req_node->next)
-            req_node->next->prev = req_node->prev;
- 
-        // if requested node is rear, change rear
-        if (req_node == lru_cache->rear) {
-            lru_cache->rear = req_node->prev;
-            lru_cache->rear->next = NULL;
-        }
- 
-        // move req_node to front
-        req_node->next = lru_cache->front;
-        req_node->prev = NULL;
- 
-        // change previous front
-        req_node->next->prev = req_node;
- 
-        // change front
-        lru_cache->front = req_node;
+    lru_node_t* node_to_remove = lru_cache->hash_table[seq_no];
+    if (node_to_remove == NULL)
+        return NULL;
+    
+
+    // if node is the front
+    if (lru_cache->front == node_to_remove) {
+        lru_cache->front = node_to_remove->next;
     }
+
+    // if node is the rear
+    if (lru_cache->rear == node_to_remove) {
+        lru_cache->rear = node_to_remove->prev;
+    }
+
+    lru_node_t* temp = node_to_remove->prev;
+    if (node_to_remove->prev != NULL)
+        node_to_remove->prev->next = node_to_remove->next;
+
+    if (node_to_remove->next != NULL)
+        node_to_remove->next->prev = temp;
+
+    node_to_remove->prev = NULL;
+    node_to_remove->next = NULL;
+
+    lru_cache->hash_table[seq_no] = NULL;
+    lru_cache->count--;
+
+    return node_to_remove;
 }
+
+void dump_lru_cache(lru_cache_t *lru_cache) {
+
+    lru_node_t *cur = lru_cache->front;
+    
+    printf("[LRU, count %d, cap %d]->", lru_cache->count, lru_cache->capacity);
+    while (cur != NULL) {
+        printf("[ seq_no: %d ]-> ", cur->block->seq_no);
+        cur = cur->next;
+    }
+
+    printf("\n");
+    return;
+ }

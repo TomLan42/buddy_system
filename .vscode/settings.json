@@ -34,7 +34,9 @@
         "filesystem": "c",
         "forward_list": "c",
         "*.tcc": "c",
-        "util.h": "c"
+        "util.h": "c",
+        "__node_handle": "c",
+        "chrono": "c"
     },
     "C_Cpp.errorSquiggles": "Enabled"
 }
